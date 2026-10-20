@@ -30,6 +30,7 @@ class BronzeStgPlayer(Base):
     tag_line= Column(String(20), nullable=False)
     raw_account=Column (JSONB,nullable=False)
     raw_summoner= Column(JSONB, nullable=False)
+    raw_masteries= Column(JSONB, nullable=False)
     raw_ranks=Column(JSONB,nullable=False)
     ingested_at=Column(DateTime,default=datetime.utcnow,nullable=False)
 
@@ -63,7 +64,7 @@ class DimPlayer(Base):
     summoner_level= Column(Integer,nullable=True)
     profile_icon_id=Column(Integer,nullable=True)
     updated_at=Column(DateTime,default=datetime.utcnow,onupdate=datetime.utcnow)
-
+    masteries=relationship("DimPlayerChampionsMasteries",back_populates="player",cascade="all,delete-orphan")
     ranks=relationship("DimPlayerRank",back_populates="player",cascade="all,delete-orphan")
     participations =relationship("FactMatchParticipant",back_populates="player")
     def __repr__(self):
@@ -139,6 +140,25 @@ class FactMatchParticipant(Base):
     player=relationship("DimPlayer",back_populates="participations")
     def __repr__(self):
         return f"<FactMatchParticipant(match_id='{self.match_id}', participant_id={self.participant_id})>"
+class DimChampion(Base):
+    __tablename__ = "dim_champion"
+    __table_args__ = {"schema": "silver"}
+    
+    champion_id = Column(Integer, primary_key=True)
+    champion_name = Column(String(50), nullable=False)
+    title = Column(String(100), nullable=True)
+class DimPlayerChampionsMasteries(Base):
+    __tablename__="dim_player_champions_masteries"
+    __table_args__={"schema":"silver"}
+    puuid=Column(String(100),ForeignKey("silver.dim_player.puuid",ondelete="CASCADE"),primary_key=True)
+    champion_id=Column(Integer,primary_key=True)
+    champion_points = Column(Integer, nullable=False)
+    champion_level = Column(Integer, nullable=False)
+    last_play_time = Column(DateTime, nullable=True)
+    updated_at=Column(DateTime,default=datetime.utcnow,onupdate=datetime.utcnow)
+    player=relationship("DimPlayer",back_populates="masteries")
+    def __repr__(self):
+        return f"<DimPlayerChampionsMasteries(puuid='{self.puuid}', champion_id={self.champion_id}, champion_points={self.championPoints}, champion_level={self.championLevel})>"
 
 # ==========================================
 # GOLD LAYER (Data Marts & Views)

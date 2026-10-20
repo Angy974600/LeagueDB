@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base,sessionmaker
-
+import requests
 
 load_dotenv()
 
@@ -27,6 +27,31 @@ def get_db():
         yield db
     finally:
         db.close()
+def sync_champions(engine):
+    with engine.connect() as conn:
+        has_champs = conn.execute(text("SELECT 1 FROM silver.dim_champion LIMIT 1")).fetchone()
+        if has_champs:
+            return
+        
+        # Prende l'ultima patch
+        versions = requests.get("https://ddragon.leagueoflegends.com/api/versions.json").json()
+        latest = versions[0]
+        data = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{latest}/data/en_US/champion.json").json()
+        
+        for champ_key, champ_data in data["data"].items():
+            conn.execute(
+                text("""
+                    INSERT INTO silver.dim_champion (champion_id, champion_name, title)
+                    VALUES (:id, :name, :title)
+                    ON CONFLICT (champion_id) DO NOTHING
+                """),
+                {
+                    "id": int(champ_data["key"]),
+                    "name": champ_data["id"], # es. "Aatrox"
+                    "title": champ_data["title"]
+                }
+            )
+        conn.commit()
 
 def init_db():
     """Crea gli schemi Bronze, Silver, Golde e tutte le tabelle/viste"""
@@ -34,8 +59,10 @@ def init_db():
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS bronze"))
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS silver"))
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS gold"))
+        conn.execute(text("ALTER TABLE bronze.stg_players ADD COLUMN IF NOT EXISTS raw_masteries JSONB;"))
         conn.commit()
 
     import src.models
     Base.metadata.create_all(bind=engine)
+    sync_champions(engine)
     src.models.create_gold_views(engine)

@@ -9,7 +9,8 @@ from src.models import (
     DimPlayerRank,
     DimPlayer,
     DimMatch,
-    FactMatchParticipant
+    FactMatchParticipant,
+    DimPlayerChampionsMasteries
 )
 
 class ETLPipeline:
@@ -41,7 +42,8 @@ class ETLPipeline:
             
             summoner=self.client.get_summoner_by_puuid(puuid,platform_region)
             ranks=self.client.get_league_entries_by_puuid(puuid,platform_region)
-            
+            masteries=self.client.get_all_champion_mastery_sorted_by_puuid(puuid,platform_region)
+
             # ------------------------------------------------------------------
             # BRONZE LAYER: Ingestion grezza del Player
             # ------------------------------------------------------------------
@@ -54,7 +56,8 @@ class ETLPipeline:
                     tag_line=actual_tag,
                     raw_account=account,
                     raw_summoner=summoner,
-                    raw_ranks=ranks
+                    raw_ranks=ranks,
+                    raw_masteries=masteries
                 )
                 db.add(stg_player)
             else:
@@ -64,6 +67,7 @@ class ETLPipeline:
                 stg_player.raw_account = account
                 stg_player.raw_summoner = summoner
                 stg_player.raw_ranks = ranks
+                stg_player.raw_masteries = masteries
                 stg_player.ingested_at=datetime.utcnow()
             
             # ------------------------------------------------------------------
@@ -121,8 +125,40 @@ class ETLPipeline:
                     
             db.commit()
             print(f"Bronze e Silver layer aggiornati")
+            # ------------------------------------------------------------------
+            # MASTERIES INGESTION: 
+            # ------------------------------------------------------------------ 
 
-        
+            for m_data in (masteries or []):
+                champion_id =m_data.get("championId")
+                champion_points=m_data.get("championPoints")
+                champion_level=m_data.get("championLevel")
+                last_play_time = datetime.fromtimestamp(m_data.get("lastPlayTime") / 1000) if m_data.get("lastPlayTime") else None
+                
+                mastery = (
+                    db.query(DimPlayerChampionsMasteries)
+                    .filter(DimPlayerChampionsMasteries.puuid == puuid, DimPlayerChampionsMasteries.champion_id == champion_id)
+                    .first()
+                )
+
+                if not mastery:
+                    mastery=DimPlayerChampionsMasteries(
+                        puuid=puuid,
+                        champion_id=champion_id,
+                        champion_points=champion_points,
+                        champion_level=champion_level,
+                        last_play_time=last_play_time
+                    )
+                    db.add(mastery)
+                else:
+                    mastery.champion_points = champion_points
+                    mastery.champion_level = champion_level
+                    mastery.last_play_time = last_play_time
+                    mastery.updated_at = datetime.utcnow()
+                
+                db.add(mastery)
+            db.commit()
+            print(f"Dim player, ranks e masteries persistiti")       
             # ------------------------------------------------------------------
             # MATCH INGESTION: Paginazione e caricamento
             # ------------------------------------------------------------------

@@ -126,6 +126,20 @@ def player_profile(puuid:str):
             GROUP BY m.queue_id
             ORDER BY matches DESC
         """, params),
+        "masteries": fetch_all("""
+            SELECT 
+                m.champion_id,
+                COALESCE(c.champion_name, 'ID ' || m.champion_id) AS champion_name,
+                c.title AS champion_title,
+                m.champion_points,
+                m.champion_level,
+                m.last_play_time
+            FROM silver.dim_player_champions_masteries m
+            LEFT JOIN silver.dim_champion c ON c.champion_id = m.champion_id
+            WHERE m.puuid = :puuid
+            ORDER BY m.champion_points DESC
+            LIMIT 10
+        """, params),
     }
     
 SORT_CLAUSES = {
@@ -139,6 +153,24 @@ SORT_CLAUSES = {
     "cs_desc": "(f.total_minions_killed + f.neutral_minions_killed) DESC, m.game_creation DESC",
     "duration_desc": "m.game_duration_seconds DESC, m.game_creation DESC",
 }
+@app.get("/api/players/{puuid}/masteries")
+def player_masteries(puuid: str, limit: int = Query(20, ge=1, le=200)):
+    params = {"puuid": puuid, "limit": limit}
+    return fetch_all("""
+        SELECT 
+            m.champion_id,
+            COALESCE(c.champion_name, 'ID ' || m.champion_id) AS champion_name,
+            c.title AS champion_title,
+            m.champion_points,
+            m.champion_level,
+            m.last_play_time
+        FROM silver.dim_player_champions_masteries m
+        LEFT JOIN silver.dim_champion c ON c.champion_id = m.champion_id
+        WHERE m.puuid = :puuid
+        ORDER BY m.champion_points DESC
+        LIMIT :limit
+    """, params)
+
 @app.get("/api/players/{puuid}/matches")
 def player_matches(
     puuid: str,
@@ -237,7 +269,6 @@ class SyncRequest(BaseModel):
     game_name: str = Field(..., min_length=1, max_length=50)
     tag_line: str = Field(..., min_length=1, max_length=20)
     count: int = Field(20, ge=-1, le=5000)
-
 
 @app.post("/api/sync")
 def sync_player(req: SyncRequest):
