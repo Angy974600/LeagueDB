@@ -1,7 +1,5 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pathlib import Path
-import json
 from sqlalchemy.orm import Session
 from src.database import SessionLocal, init_db
 from src.riot_client import RiotAPIClient
@@ -13,8 +11,7 @@ from src.models import (
     DimMatch,
     FactMatchParticipant
 )
-RAW_DATA_DIR = Path("data/raw/matches")
-RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 class ETLPipeline:
     def __init__(self, client:Optional[RiotAPIClient]=None):
         self.client=client or RiotAPIClient()
@@ -141,44 +138,38 @@ class ETLPipeline:
 
             print(f"Elaborazione Bronze")
             total_m=len(match_ids)
-            for idx,m_id in enumerate(match_ids,1):
-                raw_file=RAW_DATA_DIR / f"{m_id}.json"
-                match_data =None
+            for idx, m_id in enumerate(match_ids, 1):
+                match_data = None
                 
-                # 1. Controlla Bronze Staging nel db
-                stg_match = db.query(BronzeStgMatches).filter(BronzeStgMatches.match_id==m_id).first()
+                # 1. Controlla Bronze Staging nel db (cache)
+                stg_match = db.query(BronzeStgMatches).filter(BronzeStgMatches.match_id == m_id).first()
                 if stg_match:
                     match_data = stg_match.raw_json
-                    already_cached +=1
-                elif raw_file.exists():
-                    with open(raw_file,"r",encoding="utf-8") as f:
-                        match_data=json.load(f)
-                    db.add(BronzeStgMatches(match_id=m_id,raw_json=match_data))
-                    new_bronze_count +=1
-                    already_cached+=1
+                    already_cached += 1
                 else:
-                    match_data=self.client.get_match_details(m_id,routing_region)
-                    # Salva prima su disc
+                    match_data = self.client.get_match_details(m_id, routing_region)
                     if match_data:
-                        with open(raw_file,"w",encoding="utf-8") as f:
-                            json.dump(match_data,f,indent=2)
-                        # Inserisci in bronze staging
-                        db.add(BronzeStgMatches(match_id=m_id,raw_json=match_data))
-                        new_bronze_count +=1
+                        db.add(BronzeStgMatches(match_id=m_id, raw_json=match_data))
+                        new_bronze_count += 1
+
                 if not match_data:
                     continue
 
                 # 2.Controllo del Silver layer
-                existing_silver_match=db.query(DimMatch).filter(DimMatch.match_id==m_id).first()
-                if not existing_silver_match:
-                    self._transform_and_load_silver(db,m_id,match_data)
-                    new_silver_count+=1
-                else:
-                    #Match presente
-                    self._link_player_to_match(db,m_id,match_data,puuid)
+                try:
+                    with db.begin_nested():
+                        existing_silver_match = db.query(DimMatch).filter(DimMatch.match_id == m_id).first()
+                        if not existing_silver_match:
+                            if self._transform_and_load_silver(db, m_id, match_data):
+                                new_silver_count += 1
+                        else:
+                            # Match presente
+                            self._link_player_to_match(db, m_id, match_data, puuid)
+                except Exception as e:
+                    print(f"      [Errore] Match {m_id} saltato: {e}")
                 
                 # Commit a blocchi di 20 partite per performance
-                if idx %20 ==0 or idx ==total_m:
+                if idx % 20 == 0 or idx == total_m:
                     db.commit()
                     print(f" Progresso:{idx} / {total_m}")
             
@@ -187,15 +178,16 @@ class ETLPipeline:
             print(f"      -> {already_cached} match già in cache (Bronze/Silver).")
             print(f"      -> {new_silver_count} partite trasformate in Silver.")
 
-            return{
-                "player":f"{actual_name}#{actual_tag}",
-                "puuid":puuid,
-                "matches_processed":new_silver_count,
-                "total_requested":match_count,
-                "total_available":len(match_ids)
+            return {
+                "player": f"{actual_name}#{actual_tag}",
+                "puuid": puuid,
+                "matches_processed": new_silver_count,
+                "total_requested": match_count,
+                "total_available": len(match_ids)
             }
         finally:
             db.close()
+
     def _link_player_to_match(self, db: Session, match_id: str, data: Dict[str, Any], puuid: str):
         """Imposta il puuid sulla riga partecipante se era rimasta scollegata."""
         for p in data.get("info", {}).get("participants", []):
@@ -206,19 +198,34 @@ class ETLPipeline:
                     FactMatchParticipant.puuid.is_(None),
                 ).update({FactMatchParticipant.puuid: puuid}, synchronize_session=False)
                 break
-    def _transform_and_load_silver(self, db: Session, match_id: str, data: Dict[str, Any]):
+
+    def _transform_and_load_silver(self, db: Session, match_id: str, data: Dict[str, Any]) -> bool:
         """Trasforma il JSON grezzo di Bronze nelle tabelle normalizzate di Silver."""
         info = data.get("info", {})
-        game_creation_ts = info.get("gameCreation")
-        game_creation = datetime.fromtimestamp(game_creation_ts / 1000.0) if game_creation_ts else None
+        participants = info.get("participants", [])
+
+        # Salta match senza partecipanti o abortiti prima dell'inizio
+        if not participants or info.get("endOfGameResult") == "Abort_Unexpected":
+            print(f"      [Skip] Match {match_id} senza partecipanti o abortito ({info.get('endOfGameResult', 'No participants')})")
+            return False
+
+        game_creation_ts = (
+            info.get("gameCreation")
+            or info.get("gameStartTimestamp")
+            or info.get("gameEndTimestamp")
+        )
+        if game_creation_ts and game_creation_ts > 0:
+            game_creation = datetime.fromtimestamp(game_creation_ts / 1000.0)
+        else:
+            game_creation = datetime.utcnow()
 
         dim_match = DimMatch(
             match_id=match_id,
             game_creation=game_creation,
             game_duration_seconds=info.get("gameDuration", 0),
-            game_mode=info.get("gameMode", "UNKNOWN"),
-            game_version=info.get("gameVersion", "UNKNOWN"),
-            queue_id=info.get("queueId"),
+            game_mode=info.get("gameMode") or "UNKNOWN",
+            game_version=info.get("gameVersion") or "UNKNOWN",
+            queue_id=info.get("queueId") or 0,
         )
         db.add(dim_match)
         db.flush()
@@ -258,4 +265,5 @@ class ETLPipeline:
                 item_6=p.get("item6", 0),
             )
             db.add(participant)
+        return True
                         

@@ -6,7 +6,7 @@ from typing import Any,Dict,List,Optional
 import requests
 
 
-load_dotenv
+load_dotenv()
 
 class RiotAPIClient:
     """Client per query alle APIs di Riot Games con rate-limiting automatico e gestione di retry"""
