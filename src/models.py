@@ -147,6 +147,10 @@ class FactMatchParticipant(Base):
 def create_gold_views(engine):
     """Crea le viste analitiche Gold sopra la Silver"""
     views_sql = """
+    DROP VIEW IF EXISTS gold.mart_player_champion_stats CASCADE;
+    DROP VIEW IF EXISTS gold.mart_player_overview CASCADE;
+    DROP VIEW IF EXISTS gold.mart_role_performance CASCADE;
+
     -- 1. Gold Mart: Statistiche dettagliate per campione
     CREATE OR REPLACE VIEW gold.mart_player_champion_stats AS
     SELECT
@@ -157,9 +161,13 @@ def create_gold_views(engine):
         COUNT(f.id) AS total_matches,
         SUM(CASE WHEN f.win THEN 1 ELSE 0 END) AS wins,
         SUM(CASE WHEN NOT f.win THEN 1 ELSE 0 END) AS losses,
+        ROUND(AVG(CASE WHEN f.win THEN 100.0 ELSE 0.0 END), 1) AS winrate_pct,
         ROUND(AVG(f.kills), 1) AS avg_kills,
         ROUND(AVG(f.deaths), 1) AS avg_deaths,
         ROUND(AVG(f.assists), 1) AS avg_assists,
+        ROUND(
+            (SUM(f.kills) + SUM(f.assists))::numeric / NULLIF(SUM(f.deaths), 0), 2
+        ) AS kda_ratio,
         ROUND(
             (SUM(f.kills) + SUM(f.assists))::numeric / NULLIF(SUM(f.deaths), 0), 2
         ) AS avg_kda,

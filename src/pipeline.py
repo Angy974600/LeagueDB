@@ -35,7 +35,7 @@ class ETLPipeline:
         db=SessionLocal()
         try:
             print(f"[1/4] Estrazione dell'account Riot {game_name}#{tag_line}")
-            account=self.client.get_account_by_puuid(game_name,tag_line,routing_region)
+            account=self.client.get_account_by_riot_id(game_name,tag_line,routing_region)
             if not account:
                 raise ValueError(f"Account {game_name}#{tag_line} non trovato")
             puuid=account["puuid"]

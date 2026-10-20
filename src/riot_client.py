@@ -82,9 +82,8 @@ class RiotAPIClient:
         Routing regions: 'europe', 'americas', 'asia', 'sea'
         """
 
-        url=f"/lol/match/v5/matches/by-puuid/{puuid}/ids"
-        params={"count":count}
-        all_match_ids=List[str]=[]
+        url = f"https://{routing_region}.api.riotgames.com/lol/match/v5/matches/by-puuid/{puuid}/ids"
+        all_match_ids: List[str] = []
         max_page_size=100
         start_idx=0
         get_all=(count is None or count<=0)

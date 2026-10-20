@@ -37,9 +37,9 @@ def pipeline_stats():
         SELECT
             (SELECT COUNT(*) FROM bronze.stg_matches)              AS bronze_matches,
             (SELECT COUNT(*) FROM bronze.stg_players)              AS bronze_players,
-            (SELECT COUNT(*) FROM silver.dim_players)              AS players,
-            (SELECT COUNT(*) FROM silver.dim_matches)              AS matches,
-            (SELECT COUNT(*) FROM silver.fact_match_participants)  AS participants,
+            (SELECT COUNT(*) FROM silver.dim_player)               AS players,
+            (SELECT COUNT(*) FROM silver.dim_match)                AS matches,
+            (SELECT COUNT(*) FROM silver.fact_match_participant)   AS participants,
             (SELECT COUNT(*) FROM information_schema.views
               WHERE table_schema = 'gold')                         AS gold_marts
     """)
@@ -59,8 +59,8 @@ def list_players():
             p.profile_icon_id,
             r.tier AS solo_tier, r.rank AS solo_rank, r.league_points AS solo_lp
         FROM gold.mart_player_overview o
-        JOIN silver.dim_players p ON p.puuid = o.puuid
-        LEFT JOIN silver.dim_player_ranks r
+        JOIN silver.dim_player p ON p.puuid = o.puuid
+        LEFT JOIN silver.dim_player_rank r
                ON r.puuid = o.puuid AND r.queue_type = 'RANKED_SOLO_5x5'
         ORDER BY o.total_indexed_matches DESC, o.game_name
     """)
@@ -71,7 +71,7 @@ def player_profile(puuid:str):
     overview = fetch_one("""
         SELECT o.*, p.profile_icon_id, p.updated_at
         FROM gold.mart_player_overview o
-        JOIN silver.dim_players p ON p.puuid = o.puuid
+        JOIN silver.dim_player p ON p.puuid = o.puuid
         WHERE o.puuid = :puuid
     """, params)
     if not overview:
@@ -84,7 +84,7 @@ def player_profile(puuid:str):
             ROUND(AVG(total_minions_killed + neutral_minions_killed), 1) AS avg_cs,
             ROUND(AVG(vision_score), 1) AS avg_vision,
             ROUND(AVG(gold_earned)) AS avg_gold
-        FROM silver.fact_match_participants
+        FROM silver.fact_match_participant
         WHERE puuid = :puuid
     """, params) or {}
     overview.update(averages)
@@ -93,7 +93,7 @@ def player_profile(puuid:str):
         "overview": overview,
         "ranks": fetch_all("""
             SELECT queue_type, tier, rank, league_points, wins, losses
-            FROM silver.dim_player_ranks
+            FROM silver.dim_player_rank
             WHERE puuid = :puuid
             ORDER BY queue_type DESC
         """, params),
@@ -112,16 +112,16 @@ def player_profile(puuid:str):
         """, params),
         "recent_form": fetch_all("""
             SELECT f.match_id, f.win, f.champion_name
-            FROM silver.fact_match_participants f
-            JOIN silver.dim_matches m ON m.match_id = f.match_id
+            FROM silver.fact_match_participant f
+            JOIN silver.dim_match m ON m.match_id = f.match_id
             WHERE f.puuid = :puuid
             ORDER BY m.game_creation DESC
             LIMIT 20
         """, params),
         "queues": fetch_all("""
             SELECT m.queue_id, MAX(m.game_mode) AS game_mode, COUNT(*) AS matches
-            FROM silver.fact_match_participants f
-            JOIN silver.dim_matches m ON m.match_id = f.match_id
+            FROM silver.fact_match_participant f
+            JOIN silver.dim_match m ON m.match_id = f.match_id
             WHERE f.puuid = :puuid
             GROUP BY m.queue_id
             ORDER BY matches DESC
@@ -173,8 +173,8 @@ def player_matches(
 
     total = fetch_one(f"""
         SELECT COUNT(*) AS n
-        FROM silver.fact_match_participants f
-        JOIN silver.dim_matches m ON m.match_id = f.match_id
+        FROM silver.fact_match_participant f
+        JOIN silver.dim_match m ON m.match_id = f.match_id
         WHERE {where_clause}
     """, params)["n"]
 
@@ -187,10 +187,10 @@ def player_matches(
             f.total_damage_dealt_to_champions, f.gold_earned, f.vision_score,
             f.total_minions_killed + f.neutral_minions_killed AS cs,
             f.item_0, f.item_1, f.item_2, f.item_3, f.item_4, f.item_5, f.item_6,
-            (SELECT SUM(t.kills) FROM silver.fact_match_participants t
+            (SELECT SUM(t.kills) FROM silver.fact_match_participant t
               WHERE t.match_id = f.match_id AND t.team_id = f.team_id) AS team_kills
-        FROM silver.fact_match_participants f
-        JOIN silver.dim_matches m ON m.match_id = f.match_id
+        FROM silver.fact_match_participant f
+        JOIN silver.dim_match m ON m.match_id = f.match_id
         WHERE {where_clause}
         ORDER BY {order_clause}
         LIMIT :limit OFFSET :offset
@@ -207,7 +207,7 @@ def player_matches(
 def match_detail(match_id: str):
     match = fetch_one("""
         SELECT match_id, game_creation, game_duration_seconds, game_mode, queue_id, game_version
-        FROM silver.dim_matches
+        FROM silver.dim_match
         WHERE match_id = :match_id
     """, {"match_id": match_id})
     if not match:
@@ -222,7 +222,7 @@ def match_detail(match_id: str):
             f.total_minions_killed + f.neutral_minions_killed AS cs,
             f.item_0, f.item_1, f.item_2, f.item_3, f.item_4, f.item_5, f.item_6,
             SUM(f.kills) OVER (PARTITION BY f.team_id) AS team_kills
-        FROM silver.fact_match_participants f
+        FROM silver.fact_match_participant f
         WHERE f.match_id = :match_id
         ORDER BY f.team_id, f.participant_id
     """, {"match_id": match_id})
