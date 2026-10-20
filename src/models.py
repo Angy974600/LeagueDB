@@ -146,8 +146,8 @@ class FactMatchParticipant(Base):
 
 def create_gold_views(engine):
     """Crea le viste analitiche Gold sopra la Silver"""
-    views_sql="""
-    -- 1 Gold Mart: Statistiche dettagliate per campione
+    views_sql = """
+    -- 1. Gold Mart: Statistiche dettagliate per campione
     CREATE OR REPLACE VIEW gold.mart_player_champion_stats AS
     SELECT
         p.puuid,
@@ -157,11 +157,12 @@ def create_gold_views(engine):
         COUNT(f.id) AS total_matches,
         SUM(CASE WHEN f.win THEN 1 ELSE 0 END) AS wins,
         SUM(CASE WHEN NOT f.win THEN 1 ELSE 0 END) AS losses,
-        ROUND(AVG(f.kills),1) AS avg_kills,
-        ROUND(AVG(f.deaths),1) AS avg_deaths,
-        ROUND(AVG(f.assists),1) AS avg_assists,
+        ROUND(AVG(f.kills), 1) AS avg_kills,
+        ROUND(AVG(f.deaths), 1) AS avg_deaths,
+        ROUND(AVG(f.assists), 1) AS avg_assists,
         ROUND(
-            (SUM(f.kills) + SUM(f.assists))::numeric/ NULLIF(SUM(f.deaths),0),2) AS avg_kda,
+            (SUM(f.kills) + SUM(f.assists))::numeric / NULLIF(SUM(f.deaths), 0), 2
+        ) AS avg_kda,
         ROUND(AVG(f.total_damage_dealt_to_champions)) AS avg_damage,
         ROUND(AVG(f.gold_earned)) AS avg_gold,
         ROUND(AVG(f.total_minions_killed + f.neutral_minions_killed), 1) AS avg_cs
@@ -169,7 +170,7 @@ def create_gold_views(engine):
     JOIN silver.fact_match_participant f ON p.puuid = f.puuid
     GROUP BY p.puuid, p.game_name, p.tag_line, f.champion_name;
     
-    -- 2 Gold Mart: Panoramica giocatore (Ocverview)
+    -- 2. Gold Mart: Panoramica giocatore (Overview)
     CREATE OR REPLACE VIEW gold.mart_player_overview AS
     SELECT 
         p.puuid,
@@ -187,8 +188,8 @@ def create_gold_views(engine):
         ROUND(AVG(f.total_damage_dealt_to_champions)) AS avg_damage_per_game,
         MAX(m.game_creation) AS latest_match_played
     FROM silver.dim_player p
-    LEFT JOIN silver.fact_match_participants f ON p.puuid = f.puuid
-    LEFT JOIN silver.dim_matche m ON f.match_id = m.match_id
+    LEFT JOIN silver.fact_match_participant f ON p.puuid = f.puuid
+    LEFT JOIN silver.dim_match m ON f.match_id = m.match_id
     GROUP BY p.puuid, p.game_name, p.tag_line, p.summoner_level;
     
     -- 3. Gold Mart: Performance per Ruolo (Role Distribution)
@@ -204,12 +205,12 @@ def create_gold_views(engine):
         ROUND(AVG(f.kills), 1) AS avg_kills,
         ROUND(AVG(f.deaths), 1) AS avg_deaths,
         ROUND(AVG(f.assists), 1) AS avg_assists
-    FROM silver.dim_players p
+    FROM silver.dim_player p
     JOIN silver.fact_match_participant f ON p.puuid = f.puuid
     GROUP BY p.puuid, p.game_name, p.tag_line, f.team_position;
     """
     with engine.connect() as conn:
         conn.execute(text(views_sql))
         conn.commit()
-    
+
     
