@@ -46,6 +46,7 @@ data/
 *.json
 !/data/static/*.json   # Mantieni solo eventuali JSON statici (es. DataDragon mock)
 *.db
+*.sqlite
 *.sqlite3
 *.duckdb
 
