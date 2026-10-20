@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lol_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-lol_inspector_db}
+    ports:
+      # Mappiamo la porta 5433 sull'host per non entrare in conflitto con il vecchio DB (5432)
+      - "${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - lol_pgdata:/var/lib/postgresql/data
+    networks:
+      - lol_net
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: lol_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@lolinspector.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      # Mappiamo su 5051 per non entrare in conflitto con la 5050
+      - "${PGADMIN_PORT:-5051}:80"
+    depends_on:
+      - postgres
+    volumes:
+      - lol_pgadmin_data:/var/lib/pgadmin
+    networks:
+      - lol_net
+
+volumes:
+  lol_pgdata:
+    driver: local
+  lol_pgadmin_data:
+    driver: local
+
+networks:
+  lol_net:
+    driver: bridge

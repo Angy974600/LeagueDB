@@ -1,0 +1,92 @@
+# ==========================================
+# Operating System Files
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Environment Variables & Secrets (CRITICAL)
+# ==========================================
+# Mai committare chiavi API Riot, password DB o token!
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# ==========================================
+# Data Engineering & Datalake (Local Files)
+# ==========================================
+# Esclude dati grezzi, file Parquet, DB SQLite/DuckDB temporanei
+data/
+*.csv
+*.parquet
+*.json
+!/data/static/*.json   # Mantieni solo eventuali JSON statici (es. DataDragon mock)
+*.db
+*.sqlite3
+*.duckdb
+
+# ==========================================
+# Orchestration & Tools (Airflow / dbt / Spark)
+# ==========================================
+# Airflow
+/airflow/logs/
+/airflow/airflow.db
+/airflow/airflow-webserver.pid
+
+# dbt
+target/
+dbt_packages/
+logs/
+# Jupyter / Notebooks
+.ipynb_checkpoints/
+
+# ==========================================
+# Containers & Docker Local Mounts
+# ==========================================
+.docker/
+pgdata/                # Volume dati PostgreSQL locale
+minio_data/            # Volume dati MinIO/S3 locale
+
+# ==========================================
+# Frontend / Node (se usi React/Vite/Next)
+# ==========================================
+node_modules/
+dist/
+build/
+.next/
+.out/
+
+# ==========================================
+# IDEs & Code Editors
+# ==========================================
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
