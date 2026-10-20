@@ -2,6 +2,8 @@
    LeagueDB — Dashboard SPA (vanilla JS, hash routing)
    ========================================================================== */
 
+import { renderMastery, cleanupMastery } from './mastery.js';
+
 const API = '/api';
 const app = document.getElementById('app');
 const DEFAULT_TITLE = document.title;
@@ -110,10 +112,17 @@ const CHEVRON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" str
 /* ---------- Router ---------- */
 function router() {
   const hash = location.hash || '#/';
-  const m = hash.match(/^#\/player\/(.+)$/);
+  const mastery = hash.match(/^#\/player\/([^/]+)\/mastery$/);
+  const m = hash.match(/^#\/player\/([^/]+)$/);
+  cleanupMastery();
   window.scrollTo({ top: 0 });
-  if (m) renderPlayer(decodeURIComponent(m[1]));
+  if (mastery) renderMastery(decodeURIComponent(mastery[1]), masteryDeps());
+  else if (m) renderPlayer(decodeURIComponent(m[1]));
   else renderHome();
+}
+
+function masteryDeps() {
+  return { app, state, api, esc, fmt, fmtK, timeAgo, enc, iconImg, champImg, errorBox };
 }
 
 /* ==========================================================================
@@ -322,10 +331,15 @@ async function renderPlayer(puuid) {
         </div>
       </div>
       <div class="profile-ranks">${ranksHtml(d.ranks)}</div>
-      <button class="btn btn-ghost" id="refresh-btn" type="button">
-        <span class="spinner"></span><span class="btn-label">Aggiorna</span>
-      </button>
+      <div class="profile-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+        <a class="btn btn-mastery" href="#/player/${enc(puuid)}/mastery" id="mastery-btn">🏆 Maestrie</a>
+        <button class="btn btn-ghost" id="refresh-btn" type="button">
+          <span class="spinner"></span><span class="btn-label">Aggiorna</span>
+        </button>
+      </div>
     </section>
+
+    ${masteryTeaser(puuid, d.masteries || [])}
 
     ${num(o.total_indexed_matches) === 0
       ? `<div class="card empty"><strong>Nessuna partita collegata</strong>Premi “Aggiorna” per scaricare le partite.</div>`
@@ -433,6 +447,29 @@ async function renderPlayer(puuid) {
   bindMatchList($('#match-list'));
   initMatchFilters();
   loadMatches(true);
+}
+
+function masteryTeaser(puuid, masteries) {
+  if (!masteries.length) return '';
+  const top = masteries.slice(0, 3);
+  const total = masteries.reduce((s, m) => s + num(m.champion_points), 0);
+  const lvlColor = (l) => (l >= 10 ? 'hsl(42 90% 58%)' : l >= 7 ? 'hsl(275 80% 70%)' : l >= 4 ? 'hsl(222 90% 68%)' : 'hsl(156 60% 50%)');
+  const key = CHAMP_FIX[top[0].champion_name] || top[0].champion_name;
+  return `
+    <a class="card ms-teaser fade-up" style="--d:1" href="#/player/${enc(puuid)}/mastery" id="mastery-teaser">
+      <div class="ms-teaser-bg" style="background-image:url('${dd}/img/champion/splash/${key}_0.jpg')"></div>
+      <div class="ms-teaser-champs">
+        ${top.map((m) => `<div class="ms-teaser-champ" style="--lvl:${lvlColor(num(m.champion_level))}">
+          <img src="${champImg(m.champion_name)}" alt="${esc(m.champion_name)}" ${IMG_FALLBACK}><span>${m.champion_level}</span>
+        </div>`).join('')}
+      </div>
+      <div class="ms-teaser-text">
+        <small>✨ Sala delle Maestrie</small>
+        <h2>${fmt(total)}+ punti maestria nei top ${masteries.length}</h2>
+        <p>Podio, universo dei campioni, curiosità e la ruota “Cosa gioco stasera?”</p>
+      </div>
+      <span class="ms-teaser-cta">Esplora →</span>
+    </a>`;
 }
 
 function ranksHtml(ranks) {

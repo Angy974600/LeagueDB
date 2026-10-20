@@ -171,6 +171,51 @@ def player_masteries(puuid: str, limit: int = Query(20, ge=1, le=200)):
         LIMIT :limit
     """, params)
 
+@app.get("/api/players/{puuid}/mastery")
+def player_mastery_dashboard(puuid: str):
+    """Dati per la pagina 'Sala delle Maestrie': header giocatore + tutte le maestrie
+    arricchite con le statistiche delle partite indicizzate per campione."""
+    params = {"puuid": puuid}
+    player = fetch_one("""
+        SELECT puuid, game_name, tag_line, summoner_level, profile_icon_id, updated_at
+        FROM silver.dim_player
+        WHERE puuid = :puuid
+    """, params)
+    if not player:
+        raise HTTPException(status_code=404, detail="Giocatore non trovato nel database.")
+
+    masteries = fetch_all("""
+        SELECT
+            m.champion_id,
+            COALESCE(c.champion_name, 'ID ' || m.champion_id) AS champion_name,
+            c.title AS champion_title,
+            m.champion_points,
+            m.champion_level,
+            m.last_play_time,
+            COALESCE(s.games, 0) AS games,
+            COALESCE(s.wins, 0)  AS wins,
+            s.avg_kills, s.avg_deaths, s.avg_assists, s.kda_ratio
+        FROM silver.dim_player_champions_masteries m
+        LEFT JOIN silver.dim_champion c ON c.champion_id = m.champion_id
+        LEFT JOIN (
+            SELECT
+                champion_id,
+                COUNT(*) AS games,
+                SUM(CASE WHEN win THEN 1 ELSE 0 END) AS wins,
+                ROUND(AVG(kills), 1)   AS avg_kills,
+                ROUND(AVG(deaths), 1)  AS avg_deaths,
+                ROUND(AVG(assists), 1) AS avg_assists,
+                ROUND((SUM(kills) + SUM(assists))::numeric / NULLIF(SUM(deaths), 0), 2) AS kda_ratio
+            FROM silver.fact_match_participant
+            WHERE puuid = :puuid
+            GROUP BY champion_id
+        ) s ON s.champion_id = m.champion_id
+        WHERE m.puuid = :puuid
+        ORDER BY m.champion_points DESC
+    """, params)
+
+    return {"player": player, "masteries": masteries}
+
 @app.get("/api/players/{puuid}/matches")
 def player_matches(
     puuid: str,
